@@ -1,0 +1,48 @@
+version: '3'
+services:
+  zookeeper:
+    build:
+      context: .
+      dockerfile: Dockerfile.zookeeper
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+      - ZOOKEEPER_INIT_LIMIT=5
+      - ZOOKEEPER_SYNC_LIMIT=2
+    networks:
+      - kafka-net
+
+  kafka:
+    build:
+      context: .
+      dockerfile: Dockerfile.kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    environment:
+      - KAFKA_BROKER_ID=0
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+    depends_on:
+      - zookeeper
+    networks:
+      - kafka-net
+
+volumes:
+  zookeeper_data:
+  zookeeper_log:
+  kafka_data:
+
+networks:
+  kafka-net:
+    driver: bridge 

@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: video-streaming-app
+  namespace: video-streaming
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: video-streaming
+  template:
+    metadata:
+      labels:
+        app: video-streaming
+    spec:
+      containers:
+      - name: video-streaming
+        image: video-streaming:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: SPRING_DATA_MONGODB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: video-streaming-secrets
+              key: mongodb-username
+        - name: SPRING_DATA_MONGODB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: video-streaming-secrets
+              key: mongodb-password
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: video-streaming-secrets
+              key: minio-access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: video-streaming-secrets
+              key: minio-secret-key
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+        - name: temp-volume
+          mountPath: /tmp/video-processing
+      volumes:
+      - name: config-volume
+        configMap:
+          name: video-streaming-config
+      - name: temp-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: video-streaming
+  namespace: video-streaming
+spec:
+  selector:
+    app: video-streaming
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP 

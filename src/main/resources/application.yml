@@ -1,0 +1,74 @@
+server:
+  port: 8080
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 2GB
+      max-request-size: 2GB
+  data:
+    mongodb:
+      host: localhost
+      port: 27017
+      database: video_db
+  task:
+    scheduling:
+      pool:
+        size: 5
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: video-transcoding-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.video.transcoding.dto"
+
+minio:
+  endpoint: http://localhost:9000
+  accessKey: minioadmin
+  secretKey: minioadmin
+  bucket: videos
+  region: us-east-1
+
+video:
+  processing:
+    temp-dir: ./temp
+    qualities:
+      - name: 4K
+        height: 2160
+        bitrate: 8000k
+        preset: slow
+        crf: 17
+      - name: 1080p
+        height: 1080
+        bitrate: 5000k
+        preset: medium
+        crf: 18
+      - name: 720p
+        height: 720
+        bitrate: 3000k
+        preset: medium
+        crf: 19
+      - name: 480p
+        height: 480
+        bitrate: 1500k
+        preset: medium
+        crf: 20
+      - name: 360p
+        height: 360
+        bitrate: 1000k
+        preset: medium
+        crf: 21
+  share:
+    endpoints:
+      UNIT_1: http://192.168.205.108:8080/api/videos/share/sync
+      UNIT_2: http://192.168.205.104:8081/api/videos/share/sync
+  kafka:
+    topics:
+      transcoding: video-transcoding
+      transcoding-result: video-transcoding-result 

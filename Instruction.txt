@@ -1,0 +1,100 @@
+Video Streaming Service - Hướng dẫn cài đặt và triển khai
+
+1. Yêu cầu hệ thống:
+   - JDK 17
+   - Maven 3.8+
+   - FFmpeg
+   - Docker
+   - Kubernetes cluster
+   - Git
+
+2. Cấu trúc hệ thống:
+   - Spring Boot application
+   - MongoDB database
+   - MinIO object storage
+   - Kafka message broker
+   - Zookeeper (cho Kafka)
+
+3. Các tính năng chính:
+   - Upload video
+   - Transcode video sang nhiều chất lượng (1080p, 720p, 480p)
+   - Chia sẻ video giữa các đơn vị
+   - Xử lý bất đồng bộ với Kafka
+   - Lưu trữ video trên MinIO
+   - Quản lý metadata trên MongoDB
+
+4. Các yêu cầu đã được thực hiện:
+   - Tách biệt quá trình transcoding ra khỏi quá trình upload
+   - Sử dụng Kafka cho xử lý bất đồng bộ
+   - Cấu hình cho môi trường Kubernetes
+   - Tạo ConfigMap và Secret cho cấu hình
+   - Hỗ trợ chia sẻ video giữa các đơn vị
+   - Xử lý file video lớn (tối đa 2GB)
+
+5. Hướng dẫn cài đặt:
+
+   a. Cài đặt local:
+   ```bash
+   # Clone repository
+   git clone <repository-url>
+   cd video-streaming-service
+
+   # Build project
+   mvn clean package
+
+   # Chạy với Docker Compose
+   docker-compose up -d
+   ```
+
+   b. Cài đặt trên Kubernetes:
+   ```bash
+   # Tạo namespace
+   kubectl create namespace video-streaming
+
+   # Tạo ConfigMap và Secret
+   kubectl apply -f k8s/configmap.yaml
+   kubectl apply -f k8s/secrets.yaml
+
+   # Tạo persistent volumes và claims
+   kubectl apply -f k8s/persistent-volumes.yaml
+
+   # Deploy Zookeeper
+   kubectl apply -f k8s/zookeeper-deployment.yaml
+
+   # Đợi Zookeeper khởi động
+   kubectl wait --for=condition=ready pod -l app=zookeeper -n video-streaming
+
+   # Deploy Kafka
+   kubectl apply -f k8s/kafka-deployment.yaml
+
+   # Deploy ứng dụng
+   kubectl apply -f k8s/app-deployment.yaml
+   ```
+
+6. Cấu hình:
+   - Các cấu hình chính được lưu trong ConfigMap (k8s/configmap.yaml)
+   - Thông tin nhạy cảm được lưu trong Secret (k8s/secrets.yaml)
+   - Có thể điều chỉnh các thông số trong các file cấu hình theo nhu cầu
+
+7. API Endpoints:
+   - POST /api/videos/upload: Upload video
+   - GET /api/videos/{videoId}/url: Lấy URL video theo chất lượng
+   - POST /api/videos/share: Chia sẻ video
+   - POST /api/videos/share/sync: Đồng bộ video giữa các đơn vị
+
+8. Lưu ý:
+   - Đảm bảo FFmpeg đã được cài đặt trong container
+   - Cấu hình đủ dung lượng cho persistent volumes
+   - Kiểm tra kết nối giữa các service trong Kubernetes
+   - Theo dõi logs để debug khi cần thiết
+
+9. Monitoring:
+   - Kiểm tra trạng thái pods: kubectl get pods -n video-streaming
+   - Xem logs: kubectl logs -f deployment/video-streaming-app -n video-streaming
+   - Kiểm tra Kafka topics: kubectl exec -it <kafka-pod> -n video-streaming -- kafka-topics --list
+
+10. Troubleshooting:
+    - Kiểm tra logs của các pods
+    - Xác nhận kết nối giữa các service
+    - Kiểm tra dung lượng persistent volumes
+    - Xác nhận cấu hình trong ConfigMap và Secret

@@ -1,0 +1,29 @@
+FROM openjdk:11-jdk-slim
+
+# Install wget and gnupg
+RUN apt-get update && apt-get install -y wget gnupg && rm -rf /var/lib/apt/lists/*
+
+# Add the Confluent repository
+RUN wget -qO - https://packages.confluent.io/deb/5.5.1/archive.key | apt-key add -
+RUN echo "deb [arch=amd64] https://packages.confluent.io/deb/5.5.1 stable main" >> /etc/apt/sources.list.d/confluent.list
+
+# Install Kafka
+RUN apt-get update && apt-get install -y confluent-kafka-2.12 && rm -rf /var/lib/apt/lists/*
+
+# Create necessary directories
+RUN mkdir -p /var/lib/kafka/data
+
+# Set environment variables
+ENV KAFKA_BROKER_ID=0
+ENV KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+ENV KAFKA_LISTENERS=PLAINTEXT://:9092
+ENV KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+ENV KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+ENV KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+ENV KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+
+# Expose Kafka port
+EXPOSE 9092
+
+# Start Kafka
+CMD ["kafka-server-start", "/etc/kafka/kafka.properties"] 
