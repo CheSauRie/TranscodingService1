@@ -5,6 +5,7 @@ import com.video.transcoding.service.VideoProcessingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -65,12 +66,42 @@ public class VideoController {
             @PathVariable String videoId,
             @RequestParam String quality) {
         try {
+            // Lấy URL video từ MinIO
             String url = videoProcessingService.getVideoUrl(videoId, quality);
             Map<String, String> response = new HashMap<>();
             response.put("url", url);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @PostMapping("/share")
+    public ResponseEntity<Map<String, String>> shareVideo(
+            @PathVariable String videoId,
+            @RequestBody ShareRequest request) {
+        // Kiểm tra quyền chia sẻ
+        // Tạo VideoShare record
+        // Gửi thông báo cho người nhận
+        // Trả về URL chia sẻ
+        return null; // Placeholder return, actual implementation needed
+    }
+
+    @KafkaListener(topics = "video-transcoding-result")
+    public void handleTranscodingResult(TranscodingResult result) {
+        if (result.isSuccess()) {
+            // Gửi email thông báo
+            notificationService.sendEmail(
+                result.getUserId(),
+                "Video Processing Complete",
+                "Your video " + result.getVideoId() + " has been processed successfully."
+            );
+            
+            // Hoặc gửi thông báo WebSocket
+            notificationService.sendWebSocketNotification(
+                result.getUserId(),
+                "Video " + result.getVideoId() + " is ready!"
+            );
         }
     }
 } 
