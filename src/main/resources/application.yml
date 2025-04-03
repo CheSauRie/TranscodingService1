@@ -27,6 +27,16 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
         spring.json.trusted.packages: "com.video.transcoding.dto"
+  websocket:
+    message-broker:
+      application-destination-prefix: /app
+      simple-broker: /topic
+  retry:
+    max-attempts: 3
+    backoff:
+      initial-interval: 2000
+      multiplier: 2
+      max-interval: 10000
 
 minio:
   endpoint: http://localhost:9000

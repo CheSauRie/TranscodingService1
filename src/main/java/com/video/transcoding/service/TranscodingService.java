@@ -9,6 +9,8 @@ import io.minio.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -30,9 +32,13 @@ public class TranscodingService {
     private final VideoProcessingConfig videoProcessingConfig;
     private final VideoRepository videoRepository;
     private final KafkaTemplate<String, TranscodingResult> kafkaTemplate;
+    private final WebSocketService webSocketService;
 
     public void processVideo(TranscodingRequest request) {
         try {
+            // Gửi thông báo bắt đầu transcoding
+            webSocketService.sendProgress(request.getUserId(), request.getVideoId(), "TRANSCODING_STARTED", 0);
+
             // Create temp directory if it doesn't exist
             Path tempDir = Path.of(videoProcessingConfig.getTempDir());
             Files.createDirectories(tempDir);
@@ -53,30 +59,23 @@ public class TranscodingService {
             // Process video for different qualities
             List<String> processedFiles = new ArrayList<>();
             List<Video.VideoQuality> qualities = new ArrayList<>();
+            int totalQualities = videoProcessingConfig.getQualities().size();
+            int currentQuality = 0;
 
             for (VideoProcessingConfig.Quality quality : videoProcessingConfig.getQualities()) {
+                currentQuality++;
+                int progress = (currentQuality * 100) / totalQualities;
+                webSocketService.sendProgress(request.getUserId(), request.getVideoId(), "TRANSCODING", progress);
+
                 String outputFileName = request.getVideoId() + "_" + quality.getName() + request.getExtension();
                 Path outputPath = tempDir.resolve(outputFileName);
                 
-                // Transcode video using FFmpeg
-                String ffmpegCommand = String.format(
-                    "ffmpeg -i %s -vf scale=-2:%d -c:v libx264 -preset %s -crf %d -b:v %s " +
-                    "-c:a aac -b:a 192k -ar 48000 -ac 2 -movflags +faststart %s",
-                    originalVideoPath,
-                    quality.getHeight(),
-                    quality.getPreset(),
-                    quality.getCrf(),
-                    quality.getBitrate(),
-                    outputPath
-                );
+                // Transcode video using FFmpeg with retry
+                transcodeVideoWithRetry(originalVideoPath, outputPath, quality);
                 
-                log.info("Executing FFmpeg command: {}", ffmpegCommand);
-                Process process = Runtime.getRuntime().exec(ffmpegCommand);
-                process.waitFor();
-
                 // Upload to MinIO
                 String objectName = request.getVideoId() + "/" + outputFileName;
-                uploadToMinio(outputPath.toFile(), objectName);
+                uploadToMinioWithRetry(outputPath.toFile(), objectName);
                 processedFiles.add(outputPath.toString());
 
                 // Create video quality info
@@ -99,6 +98,9 @@ public class TranscodingService {
                 Files.delete(Path.of(processedFile));
             }
 
+            // Gửi thông báo hoàn thành
+            webSocketService.sendProgress(request.getUserId(), request.getVideoId(), "TRANSCODING_COMPLETED", 100);
+
             // Send success result
             TranscodingResult result = new TranscodingResult();
             result.setVideoId(request.getVideoId());
@@ -111,6 +113,9 @@ public class TranscodingService {
         } catch (Exception e) {
             log.error("Error processing video: {}", request.getVideoId(), e);
             
+            // Gửi thông báo lỗi
+            webSocketService.sendProgress(request.getUserId(), request.getVideoId(), "ERROR", 0);
+            
             // Send error result
             TranscodingResult result = new TranscodingResult();
             result.setVideoId(request.getVideoId());
@@ -122,7 +127,38 @@ public class TranscodingService {
         }
     }
 
-    private void uploadToMinio(File file, String objectName) throws Exception {
+    @Retryable(
+        value = {Exception.class},
+        maxAttempts = 3,
+        backoff = @Backoff(delay = 2000, multiplier = 2, maxDelay = 10000)
+    )
+    private void transcodeVideoWithRetry(Path inputPath, Path outputPath, VideoProcessingConfig.Quality quality) throws Exception {
+        String ffmpegCommand = String.format(
+            "ffmpeg -i %s -vf scale=-2:%d -c:v libx264 -preset %s -crf %d -b:v %s " +
+            "-c:a aac -b:a 192k -ar 48000 -ac 2 -movflags +faststart %s",
+            inputPath,
+            quality.getHeight(),
+            quality.getPreset(),
+            quality.getCrf(),
+            quality.getBitrate(),
+            outputPath
+        );
+        
+        log.info("Executing FFmpeg command: {}", ffmpegCommand);
+        Process process = Runtime.getRuntime().exec(ffmpegCommand);
+        int exitCode = process.waitFor();
+        
+        if (exitCode != 0) {
+            throw new Exception("FFmpeg process failed with exit code: " + exitCode);
+        }
+    }
+
+    @Retryable(
+        value = {Exception.class},
+        maxAttempts = 3,
+        backoff = @Backoff(delay = 2000, multiplier = 2, maxDelay = 10000)
+    )
+    private void uploadToMinioWithRetry(File file, String objectName) throws Exception {
         try (InputStream inputStream = new FileInputStream(file)) {
             minioClient.putObject(
                 PutObjectArgs.builder()

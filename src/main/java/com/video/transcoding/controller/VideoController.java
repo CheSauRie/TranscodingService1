@@ -2,6 +2,7 @@ package com.video.transcoding.controller;
 
 import com.video.transcoding.dto.TranscodingRequest;
 import com.video.transcoding.service.VideoProcessingService;
+import com.video.transcoding.service.WebSocketService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -12,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class VideoController {
     private final VideoProcessingService videoProcessingService;
     private final KafkaTemplate<String, TranscodingRequest> kafkaTemplate;
+    private final WebSocketService webSocketService;
 
     @PostMapping("/upload")
     public ResponseEntity<Map<String, String>> uploadVideo(
@@ -32,13 +35,33 @@ public class VideoController {
             String originalFileName = file.getOriginalFilename();
             String extension = originalFileName.substring(originalFileName.lastIndexOf("."));
 
-            // Save file temporarily
+            // Gửi thông báo bắt đầu upload
+            webSocketService.sendProgress(userId, videoId, "UPLOADING", 0);
+
+            // Lưu file tạm thời
             Path tempDir = Path.of("temp");
             Files.createDirectories(tempDir);
             Path filePath = tempDir.resolve(videoId + extension);
-            Files.copy(file.getInputStream(), filePath);
+            
+            // Upload với progress tracking
+            try (var inputStream = file.getInputStream()) {
+                long totalBytes = file.getSize();
+                long bytesRead = 0;
+                byte[] buffer = new byte[8192];
+                int read;
+                
+                while ((read = inputStream.read(buffer)) != -1) {
+                    Files.write(filePath, buffer, 0, read, StandardOpenOption.APPEND);
+                    bytesRead += read;
+                    int progress = (int) ((bytesRead * 100) / totalBytes);
+                    webSocketService.sendProgress(userId, videoId, "UPLOADING", progress);
+                }
+            }
 
-            // Create transcoding request
+            // Gửi thông báo upload hoàn thành
+            webSocketService.sendProgress(userId, videoId, "UPLOAD_COMPLETED", 100);
+
+            // Tạo request cho Kafka
             TranscodingRequest request = new TranscodingRequest();
             request.setVideoId(videoId);
             request.setUserId(userId);
@@ -46,7 +69,7 @@ public class VideoController {
             request.setExtension(extension);
             request.setOriginalFilePath(filePath.toString());
 
-            // Send to Kafka for processing
+            // Gửi request vào Kafka topic
             kafkaTemplate.send("video-transcoding", request);
 
             Map<String, String> response = new HashMap<>();
@@ -66,7 +89,6 @@ public class VideoController {
             @PathVariable String videoId,
             @RequestParam String quality) {
         try {
-            // Lấy URL video từ MinIO
             String url = videoProcessingService.getVideoUrl(videoId, quality);
             Map<String, String> response = new HashMap<>();
             response.put("url", url);
