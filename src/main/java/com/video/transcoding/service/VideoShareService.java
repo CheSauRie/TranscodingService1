@@ -1,6 +1,7 @@
 package com.video.transcoding.service;
 
 import com.video.transcoding.config.ShareConfig;
+import com.video.transcoding.config.VideoProcessingConfig;
 import com.video.transcoding.dto.ShareSyncRequest;
 import com.video.transcoding.dto.VideoSyncRequest;
 import com.video.transcoding.model.Organization;
@@ -9,10 +10,12 @@ import com.video.transcoding.model.VideoShare;
 import com.video.transcoding.repository.VideoRepository;
 import com.video.transcoding.repository.VideoShareRepository;
 import io.minio.*;
+import io.minio.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClient.Builder;
@@ -33,8 +36,11 @@ public class VideoShareService {
     private final VideoShareRepository videoShareRepository;
     private final MinioClient minioClient;
     private final ShareConfig shareConfig;
+    private final VideoProcessingConfig videoProcessingConfig;
     private final WebClient webClient;
+    private final MinioClient minioClient;
     private final Organization currentOrg;
+    private final ExecutorService executorService = Executors.newFixedThreadPool(5);
 
     @Value("${minio.bucket}")
     private String bucketName;
@@ -60,6 +66,7 @@ public class VideoShareService {
         return savedShare;
     }
 
+    private void syncWithTargetOrganization(VideoShare share, Video video) {
     private void syncWithTargetOrganization(VideoShare share, Video video) {
         String targetEndpoint = shareConfig.getEndpoint(share.getSharedWithOrganization());
         if (targetEndpoint == null) {
@@ -178,7 +185,7 @@ public class VideoShareService {
 
         // If share was with different organization, revoke in target organization
         if (!share.isSameOrganization()) {
-            revokeInTargetOrganization(share);
+            executorService.submit(() -> revokeInTargetOrganization(share));
         }
     }
 
@@ -201,6 +208,6 @@ public class VideoShareService {
                 .bodyToMono(Void.class)
                 .doOnSuccess(v -> log.info("Successfully revoked share in organization: {}", share.getSharedWithOrganization()))
                 .doOnError(e -> log.error("Error revoking share in organization: {}", share.getSharedWithOrganization(), e))
-                .subscribe();
+                .block(); // Block to ensure completion
     }
-} 
+}
